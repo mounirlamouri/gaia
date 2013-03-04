@@ -115,7 +115,11 @@ var Launcher = (function() {
     }
   }
 
-  window.addEventListener('mozbrowserlocationchange', onLocationChange);
+  window.addEventListener('mozbrowserlocationchange', function() {
+    if ('wrapper' in currentAppFrame().dataset) {
+      onLocationChange();
+    }
+  });
 
   var bookmarkButton = document.getElementById('bookmark-button');
   function onDisplayedApplicationChange() {
@@ -159,7 +163,8 @@ var Launcher = (function() {
           url: url,
           name: name,
           icon: dataset.icon,
-          useAsyncPanZoom: dataset.useAsyncPanZoom
+          useAsyncPanZoom: dataset.useAsyncPanZoom,
+          iconable: false
         }
       });
 

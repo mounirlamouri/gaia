@@ -146,9 +146,9 @@ SystemUpdatable.prototype.download = function() {
 
   this.downloading = true;
   this.paused = false;
-  this._dispatchEvent('update-available-result', 'download');
   UpdateManager.addToDownloadsQueue(this);
   this.progress = 0;
+  this._dispatchEvent('update-available-result', 'download');
 };
 
 SystemUpdatable.prototype.cancelDownload = function() {
@@ -223,7 +223,7 @@ SystemUpdatable.prototype.showApplyPrompt = function() {
   };
 
   UtilityTray.hide();
-  CustomDialog.show(_('updateReady'), _('wantToInstall'),
+  CustomDialog.show(_('systemUpdateReady'), _('wantToInstall'),
                     cancel, confirm);
 };
 

@@ -12,22 +12,23 @@ var EverythingME = {
     page.addEventListener('gridpageshowend', function onpageshow() {
       page.removeEventListener('gridpageshowend', onpageshow);
 
-      document.querySelector('#loading-overlay .loading-icon').
-                                                    classList.remove('frozen');
+      document.querySelector('#loading-overlay > section').style.visibility =
+                                                                      'visible';
 
       EverythingME.displayed = true;
-      footerStyle.MozTransform = "translateY(75px)";
+      footerStyle.MozTransform = "translateY(100%)";
 
       page.addEventListener('gridpageshowend', function onpageshowafterload() {
         if (EverythingME.displayed) return;
 
         EverythingME.displayed = true;
-        footerStyle.MozTransform = "translateY(75px)";
+        footerStyle.MozTransform = "translateY(100%)";
         EvmeFacade.onShow();
       });
 
       EverythingME.load(function success() {
-        EvmeFacade.onShow();
+        if (EverythingME.displayed)
+          EvmeFacade.onShow();
         var loadingOverlay = document.querySelector('#loading-overlay');
         loadingOverlay.style.opacity = 0;
         setTimeout(function starting() {
@@ -75,6 +76,8 @@ var EverythingME = {
                     'js/Core.js',
                     'config/config.js',
                     'config/shortcuts.js',
+                    'js/developer/utils.1.3.js',
+                    'js/helpers/Utils.js',
                     'js/Brain.js',
                     'modules/Apps/Apps.js',
                     'modules/BackgroundImage/BackgroundImage.js',
@@ -90,12 +93,10 @@ var EverythingME = {
                     'modules/ConnectionMessage/ConnectionMessage.js',
                     'modules/SmartFolder/SmartFolder.js',
                     'js/helpers/Storage.js',
-                    'js/developer/utils.1.3.js',
                     'js/plugins/Scroll.js',
-                    'js/external/iscroll.js',
+                    'js/external/uuid.js',
                     'js/api/apiv2.js',
                     'js/api/DoATAPI.js',
-                    'js/helpers/Utils.js',
                     'js/helpers/EventHandler.js',
                     'js/helpers/Idle.js',
                     'js/plugins/Analytics.js',
@@ -118,7 +119,18 @@ var EverythingME = {
     var scriptLoadCount = 0;
     var cssLoadCount = 0;
 
+    var progressLabel = document.querySelector('#loading-overlay span');
+    var progressElement = document.querySelector('#loading-overlay progress');
+    var total = js_files.length + css_files.length, counter = 0;
+
+    function updateProgress() {
+      var value = Math.floor(((++counter) / total) * 100);
+      progressLabel.textContent = value + '%';
+      progressElement.value = value;
+    }
+
     function onScriptLoad(event) {
+      updateProgress();
       event.target.removeEventListener('load', onScriptLoad);
       if (++scriptLoadCount == js_files.length) {
         EverythingME.start(success);
@@ -128,6 +140,7 @@ var EverythingME = {
     }
 
     function onCSSLoad(event) {
+      updateProgress();
       event.target.removeEventListener('load', onCSSLoad);
       if (++cssLoadCount === css_files.length) {
         loadScript(js_files[scriptLoadCount]);
@@ -172,6 +185,15 @@ var EverythingME = {
         EverythingME.initEvme(success);
       });
     }
+  },
+
+  destroy: function EverythingME_destroy() {
+    // Deleting all resources of everything.me from DOM
+    var list = document.querySelectorAll('head > [href*="everything.me"]');
+    for (var i = 0; i < list.length; i++) {
+      var resource = list[i];
+      resource.parentNode.removeChild(resource);
+    }
   }
 };
 
@@ -180,5 +202,3 @@ var EvmeFacade = {
     return false;
   }
 };
-
-EverythingME.init();

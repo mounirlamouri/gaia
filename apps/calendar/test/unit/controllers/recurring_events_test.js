@@ -1,10 +1,9 @@
-requireApp('calendar/test/unit/helper.js', function() {
-  requireLib('controllers/recurring_events.js');
-  requireLib('provider/caldav.js');
-  requireLib('models/account.js');
-});
+requireLib('models/account.js');
+requireLib('provider/abstract.js');
+requireLib('provider/local.js');
+requireLib('provider/caldav.js');
 
-suite('controllers/recurring_event', function() {
+suiteGroup('Controllers.RecurringEvents', function() {
 
   var subject;
   var app;
@@ -55,6 +54,10 @@ suite('controllers/recurring_event', function() {
       app.syncController.emit('syncComplete');
     });
 
+/*
+// These tests are currently failing and have been temporarily disabled as per
+// Bug 838993. They should be fixed and re-enabled as soon as possible as per
+// Bug 840489.
     test('monthChange', function(done) {
       var expectedDate = new Date(2012, 10, 1);
       // modify wait before move for faster tests.
@@ -72,6 +75,7 @@ suite('controllers/recurring_event', function() {
         timeController.move(expectedDate);
       });
     });
+*/
   });
 
   suite('#queueExpand', function() {

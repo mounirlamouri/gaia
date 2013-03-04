@@ -1,3 +1,5 @@
+'use strict';
+
 require('/tests/js/app_integration.js');
 require('/tests/js/integration_helper.js');
 
@@ -9,6 +11,8 @@ ContactsIntegration.prototype = {
   __proto__: AppIntegration.prototype,
 
   appName: 'Contacts',
+  manifestURL: 'app://communications.gaiamobile.org/manifest.webapp',
+  entryPoint: 'contacts',
 
   /** selector tables */
   selectors: {
@@ -65,5 +69,4 @@ ContactsIntegration.prototype = {
       done(null, isEqual);
     }, callback);
   }
-
 };

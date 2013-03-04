@@ -32,12 +32,17 @@ var Utils = {
   },
   startTimeHeaderScheduler: function ut_startTimeHeaderScheduler() {
     this.updateTimeHeaders();
-    clearInterval(this.updateTimer);
+    if (this.updateTimer) {
+      clearInterval(this.updateTimer);
+    }
     this.updateTimer = setInterval(function(self) {
       self.updateTimeHeaders();
     }, 50000, this);
   },
   escapeHTML: function ut_escapeHTML(str, escapeQuotes) {
+    if (typeof(str) !== 'string') {
+      return '';
+    }
     var stringHTML = str;
     stringHTML = stringHTML.replace(/\</g, '&#60;');
     stringHTML = stringHTML.replace(/(\r\n|\n|\r)/gm, '<br/>');
@@ -103,7 +108,7 @@ var Utils = {
   getPhoneDetails: function ut_getPhoneDetails(number, contact, callback) {
     var details = {};
     if (contact) { // we have a contact
-      var name = contact.name,
+      var name = contact.name[0],
           phone = contact.tel[0],
           carrierToShow = phone.carrier;
 

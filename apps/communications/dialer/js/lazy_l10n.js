@@ -1,3 +1,7 @@
+'use strict';
+
+var loader = LazyLoader;
+
 var LazyL10n = {
   _inDOM: false,
   _loaded: false,
@@ -13,17 +17,10 @@ var LazyL10n = {
       return;
     }
 
-    // Adding the l10n JS files to the DOM
-    // the l10n resources
-    var l10nScript = document.createElement('script');
-    l10nScript.src = '/shared/js/l10n.js';
-    l10nScript.onload = this._finalize.bind(this, callback);
-    document.head.appendChild(l10nScript);
-
-    var l10nDateScript = document.createElement('script');
-    l10nDateScript.src = '/shared/js/l10n_date.js';
-    document.head.appendChild(l10nDateScript);
-
+    // Add the l10n JS files to the DOM and wait for them to load.
+    loader.load(['/shared/js/l10n.js',
+                 '/shared/js/l10n_date.js']);
+    this._waitForLoad(callback);
     this._inDOM = true;
   },
 

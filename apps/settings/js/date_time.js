@@ -24,7 +24,7 @@ var SetTime = (function SetTime() {
   };
 })();
 
-onLocalized(function SettingsDateAndTime() {
+navigator.mozL10n.ready(function SettingsDateAndTime() {
   var _ = navigator.mozL10n.get;
 
   function updateDate() {
@@ -49,10 +49,6 @@ onLocalized(function SettingsDateAndTime() {
     _updateClockTimeout = window.setTimeout(function updateClockTimeout() {
       updateClock();
     }, (59 - d.getSeconds()) * 1000);
-  }
-
-  function setTimeManualEnabled(enabled) {
-    gTimeAutoSwitch.dataset.state = enabled ? 'auto' : 'manual';
   }
 
   function setTime(type) {
@@ -100,16 +96,44 @@ onLocalized(function SettingsDateAndTime() {
    * Monitor time.nitz.automatic-update.enabled changes
    */
 
-  settings.addObserver('time.nitz.automatic-update.enabled', function(event) {
-    setTimeManualEnabled(event.settingValue);
+  var kTimeAutoEnabled = 'time.nitz.automatic-update.enabled';
+
+  function setTimeAutoEnabled(enabled) {
+    gTimeAutoSwitch.dataset.state = enabled ? 'auto' : 'manual';
+  }
+
+  settings.addObserver(kTimeAutoEnabled, function(event) {
+    setTimeAutoEnabled(!!event.settingValue);
   });
 
-  var reqTimeAutoUpdate =
-    settings.createLock().get('time.nitz.automatic-update.enabled');
-  reqTimeAutoUpdate.onsuccess = function dt_getStatusSuccess() {
-    var lastMozSettingValue =
-      reqTimeAutoUpdate.result['time.nitz.automatic-update.enabled'];
-    setTimeManualEnabled(lastMozSettingValue);
+  var reqTimeAutoEnabled = settings.createLock().get(kTimeAutoEnabled);
+  reqTimeAutoEnabled.onsuccess = function dt_getStatusSuccess() {
+    setTimeAutoEnabled(reqTimeAutoEnabled.result[kTimeAutoEnabled]);
+  };
+
+
+  /**
+   * Hide automatic time setting if NITZ is not available
+   */
+
+  var kTimeAutoAvailable = 'time.nitz.available';
+
+  function setTimeAutoAvailable(available) {
+    gTimeAutoSwitch.hidden = !available;
+    if (!available) { // disable the time auto-update if N/A
+      var cset = {};
+      cset[kTimeAutoEnabled] = false;
+      settings.createLock().set(cset);
+    }
+  }
+
+  settings.addObserver(kTimeAutoAvailable, function(event) {
+    setTimeAutoAvailable(!!event.settingValue);
+  });
+
+  var reqTimeAutoAvailable = settings.createLock().get(kTimeAutoAvailable);
+  reqTimeAutoAvailable.onsuccess = function nitz_getStatusSuccess() {
+    setTimeAutoAvailable(!!reqTimeAutoAvailable.result[kTimeAutoAvailable]);
   };
 
 
@@ -121,8 +145,21 @@ onLocalized(function SettingsDateAndTime() {
   updateDate();
   updateClock();
 
+  // need to provide an onchange callback to tzSelect, so that
+  // when we change region, both region/city will be updated
+  function tzOnchange() {
+    var selectList = [gTimezoneRegion, gTimezoneCity];
+    selectList.forEach(function initLabel(select) {
+      var button = select.previousElementSibling;
+      var index = select.selectedIndex;
+      if (index >= 0) {
+        button.textContent = select.options[index].textContent;
+      }
+    });
+  }
+
   // monitor time.timezone changes, see /shared/js/tz_select.js
-  tzSelect(gTimezoneRegion, gTimezoneCity);
+  tzSelect(gTimezoneRegion, gTimezoneCity, tzOnchange, tzOnchange);
 
   gDatePicker.addEventListener('input', function datePickerChange() {
     setTime('date');

@@ -4,12 +4,21 @@ const GridManager = (function() {
   var MAX_ICONS_PER_PAGE = 4 * 4;
   var PREFERRED_ICON_SIZE = 60;
   var SAVE_STATE_TIMEOUT = 100;
+  var BASE_WIDTH = 320;
+  var BASE_HEIGHT = 480;
+  var DEVICE_HEIGHT = window.innerHeight;
+  var SCALE_RATIO = window.innerWidth / BASE_WIDTH;
+  var AVAILABLE_SPACE = DEVICE_HEIGHT - (BASE_HEIGHT * SCALE_RATIO);
+
+// Check if there is space for another row of icons
+  if (AVAILABLE_SPACE > BASE_HEIGHT / 5) {
+    var MAX_ICONS_PER_PAGE = 4 * 5;
+  }
 
   var container;
 
   var windowWidth = window.innerWidth;
-  var thresholdForPanning = window.innerWidth / 4;
-  var thresholdForTapping = 10;
+  var panningThreshold = window.innerWidth / 4, tapThreshold;
 
   var dragging = false;
 
@@ -18,7 +27,7 @@ const GridManager = (function() {
   var overlay, overlayStyle;
   var overlayTransition = 'opacity ' + kPageTransitionDuration + 'ms ease';
 
-  var numberOfSpecialPages = 0;
+  var numberOfSpecialPages = 0, landingPage, prevLandingPage, nextLandingPage;
   var pages = [];
   var currentPage = 1;
 
@@ -32,203 +41,352 @@ const GridManager = (function() {
     right: 0
   };
 
-  var startEvent, isPanning = false, deltaX;
+  var startEvent, isPanning = false, startX, currentX, deltaX, removePanHandler,
+      noop = function() {};
+
+  var isTouch = 'ontouchstart' in window;
+  var touchstart = isTouch ? 'touchstart' : 'mousedown';
+  var touchmove = isTouch ? 'touchmove' : 'mousemove';
+  var touchend = isTouch ? 'touchend' : 'mouseup';
+
+  var getX = (function getXWrapper() {
+    return isTouch ? function(e) { return e.touches[0].pageX } :
+                     function(e) { return e.pageX };
+  })();
+
+
+  // This will be a function that returns an actual or predicted deltaX
+  // from a mouse or touch event
+  var getDeltaX;
+
+  function initPanningPrediction() {
+    // Get our configuration data from build/applications-data.js
+    var configuration = Configurator.getSection('prediction') ||
+      { enabled: false };
+
+    // Assume that if we're using mouse events we're on a desktop that
+    // is fast enough that we don't need to do this prediction.
+    if (!isTouch || !configuration.enabled) {
+      getDeltaX = function getDeltaX(evt) {
+        return currentX - startX;
+      };
+      return;
+    }
+
+    // Predictions are based on the change between events, so we need to
+    // remember some things from the previous invocation
+    var lookahead, lastPrediction, x0, t0, x1, t1 = 0;
+
+    getDeltaX = function getDeltaX(evt) {
+      var dx, dt, velocity, adjustment, prediction, deltaP;
+
+      if (t1 < touchStartTimestamp) {
+        // If this is the first move of this series, use the start event
+        x0 = startX;
+        t0 = touchStartTimestamp;
+        lastPrediction = null;
+        // Start each new touch with the configured lookahead value
+        lookahead = configuration.lookahead;
+      } else {
+        x0 = x1;
+        t0 = t1;
+      }
+
+      // If we've overshot too many times, don't predict anything
+      if (lookahead === 0) {
+        return currentX - startX;
+      }
+
+      x1 = currentX;
+      t1 = evt.timeStamp;
+
+      dx = x1 - x0;
+      dt = t1 - t0;
+      velocity = dx / dt; // px/ms
+
+      // Guess how much extra motion we will have by the time the redraw happens
+      adjustment = velocity * lookahead;
+
+      // predict deltaX based on that extra motion
+      prediction = Math.round(x1 + adjustment - startX);
+
+      // Make sure we don't return a prediction greater than the screen width
+      if (prediction >= windowWidth) {
+        prediction = windowWidth - 1;
+      }
+      else if (prediction <= -windowWidth) {
+        prediction = -windowWidth + 1;
+      }
+
+      // If the change in the prediction has a different sign than the
+      // change in the user's finger position, then we overshot: the
+      // previous prediction was too large. So temporarily reduce the
+      // lookahead so we don't overshoot as easily next time. Also,
+      // return the last prediction to give the user's finger a chance
+      // to catch up with where we've already panned to. If we don't
+      // do this, the panning changes direction and looks jittery.
+      if (lastPrediction !== null) {
+        deltaP = prediction - lastPrediction;
+        if ((deltaP > 0 && dx < 0) || (deltaP < 0 && dx > 0)) {
+          lookahead = lookahead >> 1;  // avoid future overshoots for this pan
+          startX += deltaP;            // adjust for overshoot
+          prediction = lastPrediction; // alter our prediction
+        }
+      }
+
+      // Remember this for next time.
+      lastPrediction = prediction;
+      return prediction;
+    }
+  }
+
+  function addActive(target) {
+    if ('isIcon' in target.dataset) {
+      target.classList.add('active');
+      removeActive = function _removeActive() {
+        target.classList.remove('active');
+        removeActive = noop;
+      }
+    } else {
+      removeActive = noop;
+    }
+  }
+
+  var removeActive = noop;
 
   function handleEvent(evt) {
     switch (evt.type) {
-      case 'mousedown':
-        touchStartTimestamp = MouseEventShim.getEventTimestamp(evt);
-        evt.stopPropagation();
-        startEvent = evt;
+      case touchstart:
+        if (currentPage || numberOfSpecialPages === 1)
+          evt.stopPropagation();
+        touchStartTimestamp = evt.timeStamp;
+        startEvent = isTouch ? evt.touches[0] : evt;
         deltaX = 0;
         attachEvents();
+        removePanHandler = noop;
+        isPanning = false;
+        addActive(evt.target);
         break;
 
-      case 'mousemove':
-        evt.stopPropagation();
+      case touchmove:
+        if (evt.preventPanning === true) {
+          return;
+        }
 
         // Start panning immediately but only disable
         // the tap when we've moved far enough.
-        deltaX = evt.clientX - startEvent.clientX;
-        if (deltaX == 0)
+        startX = startEvent.pageX;
+        currentX = getX(evt);
+        deltaX = getDeltaX(evt);
+
+        if (deltaX === 0)
           return;
+
         document.body.dataset.transitioning = 'true';
-        if (Math.abs(deltaX) >= thresholdForTapping) {
-          isPanning = true;
-        }
 
         // Panning time! Stop listening here to enter into a dedicated
         // method for panning only the 2 relevants pages based on the
         // direction of the inputs. The code here is carefully written
         // to avoid as much as possible allocations while panning.
-        window.removeEventListener('mousemove', handleEvent);
+        window.removeEventListener(touchmove, handleEvent);
 
-        // Before panning pages that are directly next to the current
-        // target are set visible.
-        togglePagesVisibility(currentPage - 1, currentPage + 1);
+        var current = pages[currentPage].container.style;
+        var forward = deltaX < 0;
 
-        var index = currentPage;
-        var previous = index ? pages[index - 1].container.style : {};
-        previous.MozTransition = '';
-        previous.MozTransform = 'translateX(' + (-windowWidth) + 'px)';
-
-        var current = pages[index].container.style;
-        current.MozTransition = '';
-
-        var next =
-          index < pages.length - 1 ? pages[index + 1].container.style : {};
-        next.MozTransition = '';
-        next.MozTransform = 'translateX(' + windowWidth + 'px)';
-
-        var translate = 'translateX($px)';
-        var startX = startEvent.clientX;
-        var forward = deltaX > 0;
+        // Since we're panning, the icon we're over shouldn't be active
+        removeActive();
 
         var refresh;
-        if (index === 0) {
+        if (currentPage === 0) {
+          var next = pages[currentPage + 1].container.style;
           refresh = function(e) {
             if (deltaX <= 0) {
-              next.MozTransform = translate.replace('$', windowWidth + deltaX);
-              current.MozTransform = translate.replace('$', deltaX);
+              next.MozTransform =
+                'translateX(' + (windowWidth + deltaX) + 'px)';
+              current.MozTransform = 'translateX(' + deltaX + 'px)';
+            } else {
+              startX = currentX;
             }
           };
-        } else if (index === pages.length - 1) {
+        } else if (currentPage === pages.length - 1) {
+          var previous = pages[currentPage - 1].container.style;
           refresh = function(e) {
             if (deltaX >= 0) {
               previous.MozTransform =
-                translate.replace('$', -windowWidth + deltaX);
-              current.MozTransform = translate.replace('$', deltaX);
+                'translateX(' + (-windowWidth + deltaX) + 'px)';
+              current.MozTransform = 'translateX(' + deltaX + 'px)';
+            } else {
+              startX = currentX;
             }
           };
         } else {
+          var previous = pages[currentPage - 1].container.style;
+          var next = pages[currentPage + 1].container.style;
           refresh = function(e) {
             if (deltaX >= 0) {
               previous.MozTransform =
-                translate.replace('$', -windowWidth + deltaX);
-
-              // If we change direction make sure there isn't any part
-              // of the page on the other side that stays visible.
-              if (!forward) {
-                forward = true;
-                next.MozTransform = translate.replace('$', windowWidth);
-              }
-            } else {
-              next.MozTransform = translate.replace('$', windowWidth + deltaX);
+                'translateX(' + (-windowWidth + deltaX) + 'px)';
 
               // If we change direction make sure there isn't any part
               // of the page on the other side that stays visible.
               if (forward) {
                 forward = false;
-                previous.MozTransform = translate.replace('$', -windowWidth);
+                next.MozTransform = 'translateX(' + windowWidth + 'px)';
+              }
+            } else {
+              next.MozTransform =
+                'translateX(' + (windowWidth + deltaX) + 'px)';
+
+              // If we change direction make sure there isn't any part
+              // of the page on the other side that stays visible.
+              if (!forward) {
+                forward = true;
+                previous.MozTransform = 'translateX(-' + windowWidth + 'px)';
               }
             }
 
-            current.MozTransform = translate.replace('$', deltaX);
+            current.MozTransform = 'translateX(' + deltaX + 'px)';
           };
         }
 
+        // We should move the pages with the first touchmove event
+        window.mozRequestAnimationFrame(refresh);
+
         // Generate a function accordingly to the current page position.
-        if (Homescreen.isInEditMode() || currentPage > 2) {
+        if (currentPage > nextLandingPage || Homescreen.isInEditMode()) {
           var pan = function(e) {
-            deltaX = e.clientX - startX;
+            currentX = getX(e);
+            deltaX = getDeltaX(e);
+
+            if (!isPanning && Math.abs(deltaX) >= tapThreshold) {
+              isPanning = true;
+            }
             window.mozRequestAnimationFrame(refresh);
           };
         } else {
+          var setOpacityToOverlay = noop;
+          if (currentPage === prevLandingPage) {
+            setOpacityToOverlay = function() {
+              if (!forward)
+                return;
+
+              var opacity = opacityOnAppGridPageMax -
+                    (Math.abs(deltaX) / windowWidth) * opacityOnAppGridPageMax;
+              overlayStyle.opacity = Math.round(opacity * 10) / 10;
+            }
+          } else if (currentPage === landingPage) {
+            setOpacityToOverlay = function() {
+              var opacity = (Math.abs(deltaX) / windowWidth) *
+                            opacityOnAppGridPageMax;
+              overlayStyle.opacity = Math.round(opacity * 10) / 10;
+            }
+          } else {
+            setOpacityToOverlay = function() {
+              if (forward)
+                return;
+
+              var opacity = opacityOnAppGridPageMax -
+                    (Math.abs(deltaX) / windowWidth) * opacityOnAppGridPageMax;
+              overlayStyle.opacity = Math.round(opacity * 10) / 10;
+            }
+          }
+
           var pan = function(e) {
-            deltaX = e.clientX - startX;
-            window.mozRequestAnimationFrame(refresh);
+            currentX = getX(e);
+            deltaX = getDeltaX(e);
+
+            if (!isPanning && Math.abs(deltaX) >= tapThreshold) {
+              isPanning = true;
+            }
             window.mozRequestAnimationFrame(function() {
-              setOverlayPanning(index, deltaX, forward);
+              refresh();
+              setOpacityToOverlay();
             });
           };
         }
 
-        var container = pages[index].container;
-        container.setCapture(true);
-        MouseEventShim.setCapture(container);
-        container.addEventListener('mousemove', pan, true);
+        var container = pages[currentPage].container;
+        container.addEventListener(touchmove, pan, true);
 
-        window.addEventListener('mouseup', function removePanHandler(e) {
-          touchEndTimestamp = MouseEventShim.getEventTimestamp(e);
-          window.removeEventListener('mouseup', removePanHandler, true);
+        removePanHandler = function removePanHandler(e) {
+          touchEndTimestamp = e ? e.timeStamp : Number.MAX_VALUE;
+          window.removeEventListener(touchend, removePanHandler, true);
 
-          container.removeEventListener('mousemove', pan, true);
-          document.releaseCapture();
+          container.removeEventListener(touchmove, pan, true);
 
           window.mozRequestAnimationFrame(function panTouchEnd() {
-            onTouchEnd(deltaX);
+            onTouchEnd(deltaX, e);
           });
-        }, true);
+        };
+
+        window.addEventListener(touchend, removePanHandler, true);
+        window.removeEventListener(touchend, handleEvent);
+
         break;
 
-      case 'mouseup':
-        evt.stopPropagation();
+      case touchend:
         releaseEvents();
-        if (!isPanning) {
-          pageHelper.getCurrent().tap(evt.target);
-        }
-        isPanning = false;
+        pageHelper.getCurrent().tap(evt.target);
+        removeActive();
         break;
 
       case 'contextmenu':
-        if (deltaX !== 0) {
+        if (isPanning) {
           evt.stopImmediatePropagation();
           return;
         }
 
-        if (currentPage > 1 && 'isIcon' in evt.target.dataset) {
+        if (currentPage > landingPage && 'isIcon' in evt.target.dataset) {
           evt.stopImmediatePropagation();
+          removePanHandler();
           Homescreen.setMode('edit');
+          removeActive();
           DragDropManager.start(evt, {
-            'x': startEvent.clientX,
-            'y': startEvent.clientY
+            'x': startEvent.pageX,
+            'y': startEvent.pageY
           });
         }
 
         break;
-    }
-  }
-
-  function setOverlayPanning(index, deltaX, forward) {
-    if (index === 1) {
-      overlayStyle.opacity = (Math.abs(deltaX) / windowWidth) * opacityOnAppGridPageMax;
-    } else if (index === 0 && !forward || index === 2 && forward) {
-      overlayStyle.opacity = opacityOnAppGridPageMax - (Math.abs(deltaX) / windowWidth)
-                              * opacityOnAppGridPageMax;
     }
   }
 
   function applyEffectOverlay(index) {
     overlayStyle.MozTransition = overlayTransition;
-    overlayStyle.opacity = index === 1 ? 0 : opacityOnAppGridPageMax;
+    overlayStyle.opacity = index === landingPage ? 0 : opacityOnAppGridPageMax;
   }
 
-  function onTouchEnd(deltaX) {
+  function onTouchEnd(deltaX, evt) {
     var page = currentPage;
-    /* Bigger than threshold for panning or a fast movement bigger than
-       threshold for tapping */
-    if (Math.abs(deltaX) > thresholdForPanning ||
-        touchEndTimestamp - touchStartTimestamp < kPageTransitionDuration) {
+    // If movement over 25% of the screen size or
+    // fast movement over threshold for tapping, then swipe
+    if (Math.abs(deltaX) > panningThreshold ||
+        (Math.abs(deltaX) > tapThreshold &&
+        touchEndTimestamp - touchStartTimestamp < kPageTransitionDuration)) {
       var forward = dirCtrl.goesForward(deltaX);
       if (forward && currentPage < pages.length - 1) {
         page = page + 1;
-      } else if (!forward &&
-                  (page === 1 || page >= 3 ||
-                    (page === 2 && !Homescreen.isInEditMode()))) {
+      } else if (!forward && page > 0 &&
+                 (page === landingPage || page >= nextLandingPage + 1 ||
+                    (page === nextLandingPage && !Homescreen.isInEditMode()))) {
         page = page - 1;
       }
+    } else if (!isPanning && evt) {
+      releaseEvents();
+      pageHelper.getCurrent().tap(evt.target);
     }
+
     goToPage(page);
   }
 
   function attachEvents() {
-    window.addEventListener('mousemove', handleEvent);
-    window.addEventListener('mouseup', handleEvent);
+    window.addEventListener(touchmove, handleEvent);
+    window.addEventListener(touchend, handleEvent);
   }
 
   function releaseEvents() {
-    window.removeEventListener('mousemove', handleEvent);
-    window.removeEventListener('mouseup', handleEvent);
+    window.removeEventListener(touchmove, handleEvent);
+    window.removeEventListener(touchend, handleEvent);
   }
 
   function togglePagesVisibility(start, end) {
@@ -242,12 +400,48 @@ const GridManager = (function() {
     }
   }
 
+  function goToPageCallback(index, fromPage, toPage, dispatchEvents, callback) {
+    delete document.body.dataset.transitioning;
+
+    if (dispatchEvents) {
+      fromPage.container.dispatchEvent(new CustomEvent('gridpagehideend'));
+      toPage.container.dispatchEvent(new CustomEvent('gridpageshowend'));
+    }
+
+    overlayStyle.MozTransition = '';
+
+    // We are going to prepare pages that are next to current page
+    // for panning.
+
+    if (index) {
+      var previous = pages[index - 1].container.style;
+      previous.MozTransition = '';
+      previous.MozTransform = 'translateX(-' + windowWidth + 'px)';
+    }
+
+    if (index < pages.length - 1) {
+      var next = pages[index + 1].container.style;
+      next.MozTransition = '';
+      next.MozTransform = 'translateX(' + windowWidth + 'px)';
+    }
+
+    var current = toPage.container.style;
+    current.MozTransition = '';
+    current.MozTransform = 'translateX(0)';
+
+    togglePagesVisibility(index - 1, index + 1);
+
+    if (callback) {
+      setTimeout(callback, 0);
+    }
+  }
+
   var touchStartTimestamp = 0;
   var touchEndTimestamp = 0;
   var lastGoingPageTimestamp = 0;
 
   function goToPage(index, callback) {
-    document.location.hash = (index == 1 ? 'root' : '');
+    document.location.hash = (index === landingPage ? 'root' : '');
     if (index < 0 || index >= pages.length)
       return;
 
@@ -256,18 +450,6 @@ const GridManager = (function() {
     lastGoingPageTimestamp += delay;
     var duration = delay < kPageTransitionDuration ?
                    delay : kPageTransitionDuration;
-
-    var goToPageCallback = function() {
-      delete document.body.dataset.transitioning;
-      if (callback) {
-        callback();
-      }
-
-      previousPage.container.dispatchEvent(new CustomEvent('gridpagehideend'));
-      newPage.container.dispatchEvent(new CustomEvent('gridpageshowend'));
-      overlayStyle.MozTransition = '';
-      togglePagesVisibility(index, index);
-    };
 
     var previousPage = pages[currentPage];
     var newPage = pages[index];
@@ -287,40 +469,31 @@ const GridManager = (function() {
     updatePaginationBar();
 
     if (previousPage === newPage) {
-      var borderingPagesToBeTranslated = false;
+      if (newPage.container.getBoundingClientRect().left !== 0) {
+        // Pages are translated in X
+        if (index > 0) {
+          pages[index - 1].moveByWithEffect(-windowWidth, duration);
+        }
 
-      if (index > 0 && pages[index - 1].container.style.display === 'block') {
-        // Previous one displayed
-        pages[index - 1].moveByWithEffect(-windowWidth, duration);
-        borderingPagesToBeTranslated = true;
-      }
+        newPage.moveByWithEffect(0, duration);
 
-      newPage.moveByWithEffect(0, duration);
+        if (index < pages.length - 1) {
+          pages[index + 1].moveByWithEffect(windowWidth, duration);
+        }
 
-      if (index < pages.length - 1 &&
-          pages[index + 1].container.style.display === 'block') {
-        // Next one displayed
-        pages[index + 1].moveByWithEffect(windowWidth, duration);
-        borderingPagesToBeTranslated = true;
-      }
-
-      if (borderingPagesToBeTranslated) {
         container.addEventListener('transitionend', function transitionEnd(e) {
           container.removeEventListener('transitionend', transitionEnd);
-          goToPageCallback();
+          goToPageCallback(index, previousPage, newPage, false, callback);
         });
       } else {
-        goToPageCallback();
+        // Swipe from rigth to left on the last page on the grid
+        goToPageCallback(index, previousPage, newPage, false, callback);
       }
 
       return;
-    } else {
-      togglePagesVisibility(start, end);
     }
 
-    // Force a reflow otherwise the newPage appears immediately because it is
-    // still considered display: none;
-    newPage.container.getBoundingClientRect();
+    togglePagesVisibility(start, end);
 
     previousPage.container.dispatchEvent(new CustomEvent('gridpagehidestart'));
     newPage.container.dispatchEvent(new CustomEvent('gridpageshowstart'));
@@ -329,7 +502,7 @@ const GridManager = (function() {
 
     container.addEventListener('transitionend', function transitionEnd(e) {
       container.removeEventListener('transitionend', transitionEnd);
-      goToPageCallback();
+      goToPageCallback(index, previousPage, newPage, true, callback);
     });
   }
 
@@ -398,6 +571,8 @@ const GridManager = (function() {
   }
 
   function removeEmptyPages() {
+    var oldCurrentPage = currentPage;
+
     pages.forEach(function checkIsEmpty(page, index) {
       // ignore the landing page
       if (index < numberOfSpecialPages) {
@@ -410,6 +585,10 @@ const GridManager = (function() {
           currentPage -= 1;
       }
     });
+
+    // If the current page index changes we have to go to that page
+    if (oldCurrentPage > currentPage)
+      goToPage(currentPage);
   }
 
   /*
@@ -591,7 +770,7 @@ const GridManager = (function() {
 
     container = document.querySelector(selector);
     container.addEventListener('contextmenu', handleEvent);
-    container.addEventListener('mousedown', handleEvent, true);
+    container.addEventListener(touchstart, handleEvent, true);
 
     limits.left = container.offsetWidth * 0.05;
     limits.right = container.offsetWidth * 0.95;
@@ -603,11 +782,16 @@ const GridManager = (function() {
     // offset between these indexes here and the ones in the DB.
     // See also pageHelper.saveAll().
     numberOfSpecialPages = container.children.length;
+    landingPage = numberOfSpecialPages - 1;
+    prevLandingPage = landingPage - 1;
+    nextLandingPage = landingPage + 1;
     for (var i = 0; i < container.children.length; i++) {
       var pageElement = container.children[i];
       var page = new Page(pageElement, null);
       pages.push(page);
     }
+
+    initPanningPrediction();
   }
 
   /*
@@ -630,8 +814,8 @@ const GridManager = (function() {
         iconsByManifestURL[manifestURL] = appIcons[manifestURL];
       }
 
-      // Add an empty page where we drop the icons for any extra apps we discover
-      // at this stage.
+      // Add an empty page where we drop the icons for any extra apps we
+      // discover at this stage.
       pageHelper.addPage([]);
 
       var apps = event.target.result;
@@ -748,8 +932,8 @@ const GridManager = (function() {
       descriptor.localizedName = iconsAndNameHolder.name;
     }
 
-    // If there's an existing icon for this bookmark/app/entry point already, let
-    // it update itself.
+    // If there's an existing icon for this bookmark/app/entry point already,
+    // let it update itself.
     var existingIcon = getIcon(descriptor);
     if (existingIcon) {
       existingIcon.update(descriptor, app);
@@ -870,16 +1054,19 @@ const GridManager = (function() {
      *                 Specifies the HTML container element for the pages.
      *
      */
-    init: function gm_init(gridSelector, dockSelector, callback) {
+    init: function gm_init(gridSelector, dockSelector, pTapThreshold, callback)
+    {
       initUI(gridSelector);
 
+      tapThreshold = pTapThreshold;
       // Initialize the grid from the state saved in IndexedDB.
       HomeState.init(function eachPage(pageState) {
         // First 'page' is the dock.
         if (pageState.index == 0) {
           var dockContainer = document.querySelector(dockSelector);
-          var dock = new Dock(dockContainer, convertDescriptorsToIcons(pageState));
-          DockManager.init(dockContainer, dock);
+          var dock = new Dock(dockContainer,
+            convertDescriptorsToIcons(pageState));
+          DockManager.init(dockContainer, dock, tapThreshold);
           return;
         }
         pageHelper.addPage(convertDescriptorsToIcons(pageState));
@@ -889,7 +1076,7 @@ const GridManager = (function() {
       }, function onError(error) {
         var dockContainer = document.querySelector(dockSelector);
         var dock = new Dock(dockContainer, []);
-        DockManager.init(dockContainer, dock);
+        DockManager.init(dockContainer, dock, tapThreshold);
         initApps();
         callback();
       });
@@ -897,6 +1084,7 @@ const GridManager = (function() {
 
     onDragStart: function gm_onDragSart() {
       releaseEvents();
+      container.removeEventListener(touchstart, handleEvent, true);
       dragging = document.body.dataset.dragging = true;
     },
 
@@ -904,6 +1092,7 @@ const GridManager = (function() {
       delete document.body.dataset.dragging;
       dragging = false;
       delete document.body.dataset.transitioning;
+      container.addEventListener(touchstart, handleEvent, true);
       ensurePagesOverflow();
       removeEmptyPages();
     },
@@ -987,6 +1176,10 @@ const GridManager = (function() {
     dirCtrl: dirCtrl,
 
     pageHelper: pageHelper,
+
+    get landingPage() {
+      return landingPage;
+    },
 
     showRestartDownloadDialog: showRestartDownloadDialog
   };

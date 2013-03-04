@@ -22,6 +22,13 @@ function checkSIMChange(callback) {
   });
 }
 
+function checkDataUsageNotification(settings, usage, callback) {
+  var proxy = document.getElementById('message-handler').contentWindow;
+  var f = proxy ? proxy.checkDataUsageNotification :
+                  window.checkDataUsageNotification;
+  return f(settings, usage, callback);
+}
+
 // Waits for DOMContentLoaded and messagehandlerready, then call the callback
 function waitForDOMAndMessageHandler(window, callback) {
   var remainingSteps = 2;
@@ -50,7 +57,13 @@ function addAlarmTimeout(type, delay) {
 function setNextReset(when, callback) {
   var proxy = document.getElementById('message-handler');
   return proxy ? proxy.contentWindow.setNextReset(when, callback) :
-                 setNextReset(when, callback);
+                 window.setNextReset(when, callback);
+}
+
+function getTopUpTimeout(callback) {
+  var proxy = document.getElementById('message-handler');
+  return proxy ? proxy.contentWindow.getTopUpTimeout(callback) :
+                 window.getTopUpTimeout(callback);
 }
 
 // Next automatic reset date based on user preferences
@@ -70,8 +83,9 @@ function updateNextReset(trackingPeriod, value, callback) {
     year = today.getFullYear();
     if (today.getDate() >= monthday) {
       month = (month + 1) % 12;
-      if (month === 0)
+      if (month === 0) {
         year++;
+      }
     }
     nextReset = new Date(year, month, monthday);
 
@@ -80,8 +94,9 @@ function updateNextReset(trackingPeriod, value, callback) {
     var oneDay = 24 * 60 * 60 * 1000;
     var weekday = parseInt(value, 10);
     var daysToTarget = weekday - today.getDay();
-    if (daysToTarget <= 0)
+    if (daysToTarget <= 0) {
       daysToTarget = 7 + daysToTarget;
+    }
     nextReset = new Date();
     nextReset.setTime(nextReset.getTime() + oneDay * daysToTarget);
     toMidnight(nextReset);
@@ -111,10 +126,12 @@ function resetData() {
       var data = mobileRequest.result.data;
       debug('Data length should be 1 and it is', data.length);
       var currentDataUsage = 0;
-      if (data[0].rxBytes)
+      if (data[0].rxBytes) {
         currentDataUsage += data[0].rxBytes;
-      if (data[0].txBytes)
+      }
+      if (data[0].txBytes) {
         currentDataUsage += data[0].txBytes;
+      }
 
       // Adds the fixing
       var tag = tags[tags.length - 1];
@@ -123,8 +140,9 @@ function resetData() {
       // Remove the previous ones
       for (var i = tags.length - 2; i >= 0; i--) {
         var ctag = tags[i];
-        if (ctag.sim === tag.sim)
+        if (ctag.sim === tag.sim) {
           tags.splice(i, 1);
+        }
       }
       debug('After reset', tags);
 
@@ -142,11 +160,13 @@ function resetData() {
       var data = wifiRequest.result.data;
       debug('Data length should be 1 and it is', data.length);
       var currentWifiUsage = 0;
-      if (data[0].rxBytes)
+      if (data[0].rxBytes) {
         currentWifiUsage += data[0].rxBytes;
-      if (data[0].txBytes)
+      }
+      if (data[0].txBytes) {
         currentWifiUsage += data[0].txBytes;
-      ConfigManager.setOption({ wifiFixing: currentWifiUsage });
+      }
+      asyncStorage.setItem('wifiFixing', currentWifiUsage);
     };
 
   });
@@ -176,8 +196,9 @@ function getDataLimit(settings) {
 
 function formatTimeHTML(timestampA, timestampB) {
   // No interval
-  if (typeof timestampB === 'undefined')
+  if (typeof timestampB === 'undefined') {
     return '<time>' + formatTime(timestampA) + '</time>';
+  }
 
   // Same day case
   var dateA = new Date(timestampA);
@@ -192,4 +213,22 @@ function formatTimeHTML(timestampA, timestampB) {
   // Interval
   return '<time>' + formatTime(timestampA) + '</time> – ' +
          '<time>' + formatTime(timestampB) + '</time>';
+}
+
+function localizeWeekdaySelector(selector) {
+  var weekStartsOnMonday =
+    !!parseInt(navigator.mozL10n.get('weekStartsOnMonday'), 10);
+  debug('Week starts on monday?', weekStartsOnMonday);
+  var monday = selector.querySelector('.monday');
+  var sunday = selector.querySelector('.sunday');
+  var list = monday.parentNode;
+  if (weekStartsOnMonday) {
+    debug('Monday, Tuesday...');
+    list.insertBefore(monday, list.childNodes[0]); // monday is the first
+    list.appendChild(sunday); // sunday is the last
+  } else {
+    debug('Sunday, Monday...');
+    list.insertBefore(sunday, list.childNodes[0]); // sunday is the first
+    list.insertBefore(monday, sunday.nextSibling); // monday is the second
+  }
 }

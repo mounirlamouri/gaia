@@ -4,13 +4,14 @@
 'use strict';
 
 // handle Wi-Fi settings
-onLocalized(function wifiSettings() {
+navigator.mozL10n.ready(function wifiSettings() {
   var _ = navigator.mozL10n.get;
 
   var settings = window.navigator.mozSettings;
   if (!settings)
     return;
 
+  var gWifiManager = getWifiManager();
   var gWifi = document.querySelector('#wifi');
   var gWifiCheckBox = document.querySelector('#wifi-enabled input');
   var gWifiInfoBlock = document.querySelector('#wifi-desc');
@@ -225,7 +226,7 @@ onLocalized(function wifiSettings() {
     var keys = network.capabilities;
     if (keys && keys.length) {
       small.textContent = _('securedBy', { capabilities: keys.join(', ') });
-      ssid.className = 'wifi-secure';
+      ssid.classList.add('wifi-secure');
     } else {
       small.textContent = _('securityOpen');
     }
@@ -328,7 +329,7 @@ onLocalized(function wifiSettings() {
 
             // signal is between 0 and 100, level should be between 0 and 4
             var level = Math.min(Math.floor(network.relSignalStrength / 20), 4);
-            listItem.className = 'wifi-signal' + level;
+            listItem.querySelector('a').classList.add('wifi-signal' + level);
 
             // put connected network on top of list
             if (isConnected(network)) {

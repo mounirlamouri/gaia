@@ -178,7 +178,6 @@ Evme.Brain = new function Evme_Brain() {
 
             Evme.Utils.setKeyboardVisibility(false);
             self.setEmptyClass();
-            Evme.Apps.refreshScroll();
 
             var searchbarValue = Evme.Searchbar.getValue();
             if (searchbarValue === "") {
@@ -692,17 +691,25 @@ Evme.Brain = new function Evme_Brain() {
                 appGridPosition = data.app.getPositionOnGrid(),
                 appBounds = elApp.getBoundingClientRect(),
 
-                elAppsList = elApp.parentNode.parentNode,
+                elAppsList = elApp.parentNode,
                 appsListBounds = elAppsList.getBoundingClientRect(),
+                elAppsListParent = elAppsList.parentNode,
+                appsListParentBounds = elAppsListParent.getBoundingClientRect();
 
-                oldPos = {
-                    "top": elApp.offsetTop,
-                    "left": elApp.offsetLeft
-                },
-                newPos = {
-                    "top": (appsListBounds.height - appBounds.height)/2 - ((data.isFolder? elAppsList.dataset.scrollOffset*1 : Evme.Apps.getScrollPosition()) || 0),
-                    "left": (appsListBounds.width - appBounds.width)/2
-                };
+            var oldPos = {
+                "top": elApp.offsetTop,
+                "left": elApp.offsetLeft
+            };
+
+            // First calculate the horizontal center of the viewport
+            // Then add the scroll offset (different in smartfolder / search results)
+            var newPosTop = (appsListParentBounds.height - appBounds.height)/2 +
+                ((data.isFolder? elAppsListParent.dataset.scrollOffset*1 : Evme.Apps.getScrollPosition()) || 0);
+                
+            var newPos = {
+                "top": newPosTop,
+                "left": (appsListBounds.width - appBounds.width)/2
+            };
 
             // update analytics data
             loadingAppAnalyticsData.rowIndex = appGridPosition.row;
@@ -712,8 +719,16 @@ Evme.Brain = new function Evme_Brain() {
 
             Evme.$remove("#loading-app");
 
-            var elPseudo = Evme.$create('li', {'class': "inplace", 'id': "loading-app"}, loadingApp.getCurrentHtml()),
-                useClass = !data.isFolder;
+            var elPseudo = Evme.$create('li', {'class': "inplace", 'id': "loading-app"}, '<canvas></canvas>'),
+                pseudoCanvas = Evme.$('canvas', elPseudo)[0],
+                useClass = !data.isFolder,
+                appCanvas = data.app.getIconCanvas(),
+                appIconData = appCanvas.getContext('2d').getImageData(0, 0, appCanvas.width, appCanvas.height);
+                
+            // copy the clicked app's canvas here
+            pseudoCanvas.width = appCanvas.width;
+            pseudoCanvas.height = appCanvas.height;
+            pseudoCanvas.getContext('2d').putImageData(appIconData, 0, 0);
 
             if (data.data.installed) {
                 elPseudo.classList.add("installed");
@@ -723,10 +738,8 @@ Evme.Brain = new function Evme_Brain() {
 
             elPseudo.style.cssText += 'position: absolute; top: ' + oldPos.top + 'px; left: ' + oldPos.left + 'px; -moz-transform: translate3d(0,0,0);';
 
-            var appName = Evme.Utils.l10n('apps', 'loading-app');
-            
             Evme.$('b', elPseudo, function itemIteration(el) {
-                el.innerHTML = appName;
+                el.textContent = Evme.Utils.l10n('apps', 'loading-app');
             });
 
             elApp.parentNode.appendChild(elPseudo);
@@ -915,10 +928,10 @@ Evme.Brain = new function Evme_Brain() {
                 });
 
             currentFolder.appsPaging = {
-                "offset": 0,
-                "limit": NUMBER_OF_APPS_TO_LOAD_IN_FOLDER
+              "offset": 0,
+              "limit": NUMBER_OF_APPS_TO_LOAD_IN_FOLDER
             };
-
+            
             currentFolder.clear();
             currentFolder.loadApps({
                 "apps": installedApps,
@@ -946,6 +959,9 @@ Evme.Brain = new function Evme_Brain() {
                     } else {
                         currentFolder.MoreIndicator.set(false);
                     }
+                    
+                    // remove the already installed apps from the cloud apps
+                    apps = Evme.Utils.dedupInstalledApps(apps, installedApps);
                     
                     currentFolder.loadApps({
                         "apps": apps,
@@ -1106,7 +1122,6 @@ Evme.Brain = new function Evme_Brain() {
         // item remove
         this.remove = function remove(data) {
             Evme.Shortcuts.remove(data.shortcut);
-            Evme.Shortcuts.refreshScroll();
             Evme.DoATAPI.Shortcuts.remove(data.data);
         };
     };
@@ -1362,9 +1377,6 @@ Evme.Brain = new function Evme_Brain() {
                     textKey = bHasInstalled? 'apps-has-installed' : 'apps';
                     
                 Evme.ConnectionMessage.show(elTo, textKey, { 'query': query });
-                window.setTimeout(folder?
-                                    folder.refreshScroll :
-                                    Evme.Apps.refreshScroll, 0);
             }
         };
         
@@ -1527,7 +1539,7 @@ Evme.Brain = new function Evme_Brain() {
                         "prevQuery": prevQuery,
                         "_NOCACHE": _NOCACHE
                     }, function onSuccess(data) {
-                        getAppsComplete(data, options);
+                        getAppsComplete(data, options, installedApps);
                         requestSearch = null;
                         NUMBER_OF_APPS_TO_LOAD = DEFAULT_NUMBER_OF_APPS_TO_LOAD;
                         
@@ -1566,6 +1578,7 @@ Evme.Brain = new function Evme_Brain() {
                        'name': name,
                        'installed': true,
                        'appUrl': app.origin,
+                       'favUrl': app.origin,
                        'appType': app.isBookmark ? 'bookmark' : 'installed',
                        'preferences': '',
                        'icon': Evme.Utils.sendToOS(Evme.Utils.OSMessages.GET_APP_ICON, app),
@@ -1584,13 +1597,15 @@ Evme.Brain = new function Evme_Brain() {
             return apps;
         };
 
-        function getAppsComplete(data, options) {
+        function getAppsComplete(data, options, installedApps) {
             if (data.errorCode !== Evme.DoATAPI.ERROR_CODES.SUCCESS) {
                 return false;
             }
             if (!requestSearch) {
                 return;
             }
+            
+            window.clearTimeout(timeoutHideHelper);
             
             var _query = options.query,
                 _type = options.type,
@@ -1601,20 +1616,19 @@ Evme.Brain = new function Evme_Brain() {
                 iconsFormat = options.iconsFormat,
                 queryTyped = options.queryTyped, // used for searching for exact results if user stopped typing for X seconds
                 onlyDidYouMean = options.onlyDidYouMean,
-                hasInstalledApps = options.hasInstalledApps;
-
-            window.clearTimeout(timeoutHideHelper);
-
-            var searchResults = data.response;
-            var query = searchResults.query || _query;
-            var disambig = searchResults.disambiguation || [];
-            var suggestions = searchResults.suggestions || [];
-            var apps = searchResults.apps || [];
-            var spelling = searchResults.spellingCorrection || [];
-            var isMore = (appsCurrentOffset > 0);
-            var bSameQuery = (lastSearch.query === query);
+                hasInstalledApps = options.hasInstalledApps,
+                
+                searchResults = data.response,
+                query = searchResults.query || _query,
+                disambig = searchResults.disambiguation || [],
+                suggestions = searchResults.suggestions || [],
+                apps = searchResults.apps || [],
+                spelling = searchResults.spellingCorrection || [],
+                isMore = (appsCurrentOffset > 0),
+                bSameQuery = (lastSearch.query === query);
+            
             var tipShownOnHelper = false;
-
+            
             // searching after a timeout while user it typing
             if (onlyDidYouMean || options.automaticSearch) {
                 // show only spelling or disambiguation, and only if the query is the same as what the user typed
@@ -1652,6 +1666,9 @@ Evme.Brain = new function Evme_Brain() {
 
             if (isMore || !bSameQuery) {
                 if (apps) {
+                    // remove the already installed apps from the cloud apps
+                    apps = Evme.Utils.dedupInstalledApps(apps, installedApps);
+
                     lastSearch.query = query;
                     lastSearch.source = _source;
                     lastSearch.type = _type;

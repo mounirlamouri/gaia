@@ -7,7 +7,7 @@ var ConfigManager = (function() {
 
   var DEFAULT_SETTINGS = {
     'dataLimit': false,
-    'dataLimitValue': null,
+    'dataLimitValue': 1,
     'dataLimitUnit': 'GB',
     'errors': {
       'INCORRECT_TOPUP_CODE': false,
@@ -41,6 +41,9 @@ var ConfigManager = (function() {
     'lastDataReset': today,
     'lowLimit': false,
     'lowLimitThreshold': false,
+    'lowLimitNotified': false,
+    'zeroBalanceNotified': false,
+    'dataUsageNotified': false,
     'nextReset': null,
     'plantype': 'prepaid',
     'resetTime': 1,
@@ -53,8 +56,9 @@ var ConfigManager = (function() {
   function requestConfiguration(callback) {
     if (configuration) {
       setTimeout(function _onConfiguration() {
-        if (callback)
+        if (callback) {
           callback(configuration);
+        }
       });
       return;
     }
@@ -65,27 +69,32 @@ var ConfigManager = (function() {
     xhr.send(null);
 
     xhr.onreadystatechange = function _xhrStatusChange(evt) {
-      if (xhr.readyState !== 4)
+      if (xhr.readyState !== 4) {
         return;
+      }
 
       if (xhr.status === 0 || xhr.status === 200) {
         configuration = JSON.parse(xhr.responseText);
         debug('OEM configuration done!');
-        if (callback)
+        if (callback) {
           callback(configuration);
+        }
       }
     };
   }
 
   // Let's serialize dates
   // XXX: To avoid random error:
-  // "DataCloneError: The object could not be cloned." {file: "app://costcontrol.gaiamobile.org/shared/js/async_storage.js" line: 90}]
+  // "DataCloneError: The object could not be cloned."
+  // {file:
+  // "app://costcontrol.gaiamobile.org/shared/js/async_storage.js" line: 90}]
   Date.prototype.toJSON = function() {
     return {'__date__': this.toISOString()};
   };
   function settingsReviver(k, v) {
-    if (v === null || typeof v !== 'object' || !v.hasOwnProperty('__date__'))
+    if (v === null || typeof v !== 'object' || !v.hasOwnProperty('__date__')) {
       return v;
+    }
 
     return new Date(v['__date__']);
   }
@@ -120,8 +129,9 @@ var ConfigManager = (function() {
   function requestAll(callback) {
     requestConfiguration(function _afterConfig(configuration) {
       requestSettings(function _afterSettings(settings) {
-        if (callback)
+        if (callback) {
           callback(configuration, settings);
+        }
       });
     });
   }
@@ -171,8 +181,9 @@ var ConfigManager = (function() {
             }
           }
         });
-        if (callback)
+        if (callback) {
           callback();
+        }
       }
     );
   }
@@ -180,8 +191,9 @@ var ConfigManager = (function() {
   // Part of the synchronous interface, return or set a setting.
   function syncOption(name, value) {
     var oldValue = settings[name];
-    if (value === undefined)
+    if (value === undefined) {
       return oldValue;
+    }
 
     var update = {};
     update[name] = value;
@@ -228,25 +240,29 @@ var ConfigManager = (function() {
       window.addEventListener('optionchange', callCallbacks);
     }
 
-    if (callbacks[name] === undefined)
+    if (callbacks[name] === undefined) {
       callbacks[name] = [];
+    }
 
     if (callbacks[name].indexOf(callback) < 0) {
       callbacks[name].push(callback);
       avoidInitialCall = avoidInitialCall || false;
-      if (!avoidInitialCall && callback)
+      if (!avoidInitialCall && callback) {
         callback(settings[name], null, name, settings);
+      }
     }
   }
 
   function syncRemoveObserver(name, callback) {
     var callbackCollection = callbacks[name];
-    if (!callbackCollection)
+    if (!callbackCollection) {
       return;
+    }
 
     var index = callbackCollection.indexOf(callback);
-    if (index > -1)
+    if (index > -1) {
       callbackCollection.splice(index, 1);
+    }
   }
 
   function defaultValue(name) {

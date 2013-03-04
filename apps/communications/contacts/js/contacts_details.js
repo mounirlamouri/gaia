@@ -118,7 +118,7 @@ contacts.Details = (function() {
     });
   };
 
-  var render = function cd_render(currentContact, tags) {
+  var render = function cd_render(currentContact, tags, isEnrichedContact) {
     contactData = currentContact || contactData;
 
     TAG_OPTIONS = tags || TAG_OPTIONS;
@@ -128,18 +128,18 @@ contacts.Details = (function() {
     // Initially enabled and only disabled if necessary
     editContactButton.removeAttribute('disabled');
 
-    if (isFbContact) {
+    if (!isEnrichedContact && isFbContact) {
       var fbContact = new fb.Contact(contactData);
       var req = fbContact.getData();
 
       req.onsuccess = function do_reload() {
         doReloadContactDetails(req.result);
-      }
+      };
 
       req.onerror = function() {
         window.console.error('FB: Error while loading FB contact data');
         doReloadContactDetails(contactData);
-      }
+      };
     } else {
       doReloadContactDetails(contactData);
     }
@@ -154,6 +154,7 @@ contacts.Details = (function() {
 
     detailsName.textContent = contact.name;
     contactDetails.classList.remove('no-photo');
+    contactDetails.classList.remove('fb-contact');
     contactDetails.classList.remove('up');
     listContainer.innerHTML = '';
 
@@ -218,16 +219,7 @@ contacts.Details = (function() {
       */
        cList.getContactById(contact.id,
                            function onSuccess(savedContact, enrichedContact) {
-
-        contactData = savedContact;
-        Contacts.setCurrent(contactData);
-
-        if (enrichedContact) {
-          cList.refresh(enrichedContact);
-        } else {
-          cList.refresh(contact);
-        }
-        renderFavorite(contactData);
+        renderFavorite(savedContact);
         favoriteMessage.style.pointerEvents = 'auto';
       }, function onError() {
         console.error('Error reloading contact');
@@ -320,7 +312,7 @@ contacts.Details = (function() {
     Contacts.extFb.initEventHandlers(social, contact, linked);
 
     listContainer.appendChild(social);
-  }
+  };
 
   var checkOnline = function(social) {
     var socialTemplate = social || currentSocial;
@@ -333,7 +325,7 @@ contacts.Details = (function() {
         disableButtons(socialTemplate, ['#link_button']);
       }
     }
-  }
+  };
 
   function disableButtons(tree, buttonIds) {
     buttonIds.forEach(function enable(id) {
@@ -390,7 +382,7 @@ contacts.Details = (function() {
   var onCallOrPickClicked = function onCallOrPickClicked(evt) {
     var tel = evt.target.dataset['tel'];
     Contacts.callOrPick(tel);
-  }
+  };
 
   var renderEmails = function cd_renderEmails(contact) {
     if (!contact.email) {
@@ -421,7 +413,7 @@ contacts.Details = (function() {
     var email = evt.target.dataset['email'];
     Contacts.sendEmailOrPick(email);
     return false;
-  }
+  };
 
   var renderAddresses = function cd_renderAddresses(contact) {
     if (!contact.adr) {
@@ -479,6 +471,9 @@ contacts.Details = (function() {
 
   var renderPhoto = function cd_renderPhoto(contact) {
     contactDetails.classList.remove('up');
+    if (isFbContact) {
+      contactDetails.classList.add('fb-contact');
+    }
     if (contact.photo && contact.photo.length > 0) {
       contactDetails.classList.add('up');
       var clientHeight = contactDetails.clientHeight - (initMargin * 10);
@@ -502,7 +497,7 @@ contacts.Details = (function() {
     for (var i = 0; i < elements.length; i++) {
       elements[i].classList.add('remark');
     }
-  }
+  };
 
   return {
     'init': init,

@@ -1,13 +1,7 @@
-requireApp('calendar/test/unit/helper.js', function() {
-  requireLib('templates/account.js');
-  requireLib('presets.js');
-  requireLib('provider/local.js');
-  requireLib('models/account.js');
-  requireLib('utils/account_creation.js');
-  requireLib('views/modify_account.js');
-});
+requireLib('provider/abstract.js');
+requireLib('provider/local.js');
 
-suite('views/modify_account', function() {
+uiteGroup('Views.ModifyAccount', function() {
 
   var subject;
   var account;
@@ -453,3 +447,4 @@ suite('views/modify_account', function() {
   });
 
 });
+*/

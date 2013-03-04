@@ -7,23 +7,51 @@ const Homescreen = (function() {
     document.location.host.replace(/(^[\w\d]+.)?([\w\d]+.[a-z]+)/, '$2');
   var _ = navigator.mozL10n.get;
   setLocale();
-  window.addEventListener('localized', function localize() {
+  navigator.mozL10n.ready(function localize() {
     setLocale();
     GridManager.localize();
   });
 
+  var initialized = false, landingPage;
+
   // Initialize the various components.
   PaginationBar.init('.paginationScroller');
-  GridManager.init('.apps', '.dockWrapper', function gm_init() {
-    PaginationBar.show();
-    if (document.location.hash === '#root') {
-      // Switch to the first page only if the user has not already start to pan
-      // while home is loading
-      GridManager.goToPage(1);
+
+  function initialize(lPage) {
+    if (initialized) {
+      return;
     }
-    DragDropManager.init();
-    Wallpaper.init();
-  });
+
+    initialized = true;
+    landingPage = lPage;
+
+    window.addEventListener('hashchange', function() {
+      if (document.location.hash != '#root')
+        return;
+
+      if (Homescreen.isInEditMode()) {
+        exitFromEditMode();
+      } else {
+        GridManager.goToPage(landingPage);
+      }
+    });
+
+    var tapThreshold = Configurator.getSection('tap_threshold');
+    if (typeof(tapThreshold) === 'undefined') {
+      tapThreshold = 10;
+    }
+
+    GridManager.init('.apps', '.dockWrapper', tapThreshold, function gm_init() {
+      PaginationBar.show();
+      if (document.location.hash === '#root') {
+        // Switch to the first page only if the user has not already start to pan
+        // while home is loading
+        GridManager.goToPage(landingPage);
+      }
+      DragDropManager.init();
+      Wallpaper.init();
+    });
+  }
 
   function exitFromEditMode() {
     Homescreen.setMode('normal');
@@ -31,17 +59,6 @@ const Homescreen = (function() {
     ConfirmDialog.hide();
     GridManager.goToPage(GridManager.pageHelper.getCurrentPageNumber());
   }
-
-  window.addEventListener('hashchange', function() {
-    if (document.location.hash != '#root')
-      return;
-
-    if (Homescreen.isInEditMode()) {
-      exitFromEditMode();
-    } else {
-      GridManager.goToPage(1);
-    }
-  });
 
   document.addEventListener('mozvisibilitychange', function mozVisChange() {
     if (document.mozHidden && Homescreen.isInEditMode()) {
@@ -121,6 +138,8 @@ const Homescreen = (function() {
     isInEditMode: function() {
       return mode === 'edit';
     },
+
+    init: initialize,
 
     setMode: function(newMode) {
       mode = document.body.dataset.mode = newMode;

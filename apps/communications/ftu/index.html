@@ -15,8 +15,10 @@
   <link  rel="stylesheet"type="text/css" href="/shared/style/status.css" rel="stylesheet">
 
   <!-- Specific style -->
+  <link rel="stylesheet" type="text/css" href="/contacts/style/transitions.css">
+  <link rel="stylesheet" type="text/css" href="/contacts/style/animations.css">
   <link rel="stylesheet" type="text/css" href="/contacts/style/overlay.css">
-  <link rel="stylesheet" type="text/css" href="/contacts/style/status.css" rel="stylesheet">
+  <link rel="stylesheet" type="text/css" href="/contacts/style/status.css">
   <link rel="stylesheet" type="text/css" href="/ftu/css/style.css">
   <link rel="stylesheet" type="text/css" href="/ftu/css/fb_extensions.css">
   <link rel="stylesheet" type="text/css" href="/facebook/style/curtain_frame.css">
@@ -44,6 +46,7 @@
   <!-- Code for the FTU App -->
   <script defer type="text/javascript" src="/ftu/js/basket-client.js"></script>
   <script defer type="text/javascript" src="/contacts/js/utilities/status.js"></script>
+  <script defer type="text/javascript" src="/contacts/js/utilities/overlay.js"></script>
   <script defer type="text/javascript" src="/ftu/js/fb_launcher.js"></script>
   <script defer type="text/javascript" src="/contacts/js/utilities/config.js"></script>
   <script defer type="text/javascript" src="/contacts/js/fb/fb_data.js"></script>
@@ -159,9 +162,7 @@
         </section>
       </section>
       <section role="region" id="wifi">
-        <article data-type="list">
-          <ul id="networks">
-          </ul>
+        <article id="networks" role="main">
         </article>
       </section>
       <section role="region" id="configure_network">
@@ -229,9 +230,9 @@
       <section role="region" id="import_contacts">
         <article data-type="list">
           <ul>
-            <li id="sim_import">
+            <li id="sim_import" class="importOption">
               <button id="sim-import-button" class="icon icon-sim" data-l10n-id="importSim2">
-                  Import from SIM
+                  SIM card
               </button>
               <p id="no-sim" data-l10n-id="noSimMsg">To import insert a SIM card</p>
             </li>
@@ -241,10 +242,30 @@
           <h2 data-l10n-id="otherAccount">Other accounts</h2>
         </header>
         <article data-type="list">
-          <ul>
-            <li id="fb_import" class="disabled">
+          <ul id="fb_container">
+            <li id="fb_import" class="importOption">
+              <button id="fb-import-button" class="icon icon-fb" data-l10n-id="importFb2">
+                  Facebook
+              </button>
+              <p id="no-network" class="hidden" data-l10n-id="noConnection">
+                To import Facebook friends connect to Wi-Fi or data network
+              </p>
+            </li>
+            <li id="fb_after_import1" class="hidden">
               <p data-l10n-id="importFb2">Facebook</p>
-              <p id="fb_import_feedback" data-l10n-id="notImportedYet">Not imported yet</p>
+              <p id="fb_import_feedback"></p>
+            </li>
+            <li class="importOption hidden" id="fb_after_import2">
+              <p data-l10n-id="afterFbImport"></p>
+            </li>
+          </ul>
+        </article>
+        <article data-type="list">
+          <ul id="fb_container">
+            <li id="live_import" class="importOption">
+              <button id="live-import-button" class="icon icon-fb" data-l10n-id="importLive">
+                  Windows Live
+              </button>
             </li>
           </ul>
         </article>
@@ -565,16 +586,15 @@
     </menu>
   </form>
 
-  <section id="loading-overlay" role="region" class="view">
-    <article class="loading-container">
-      <header class="loading-header" id="loading-header">
-        Loading
-      </header>
-      <p class="loading-icon" role="status">
-        <progress></progress>
+  <form data-type="confirm" id="loading-overlay" role="dialog" class="hide no-opacity">
+    <section id="progress-activity" class="hide">
+      <h1 id="progress-title"></h1>
+      <p role="status">
+        <span id="progress-msg"></span>
+        <progress id="progress-element" class="pack-activity" value="0" max="100"></progress>
       </p>
-    </article>
-  </section>
+    </section>
+  </form>
 
   <section id="statusMsg" role="status" class="ftu">
     <p></p>

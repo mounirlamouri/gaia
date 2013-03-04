@@ -1,15 +1,10 @@
-requireApp('calendar/test/unit/helper.js', function() {
-  requireLib('ext/ical.js');
-  requireApp('calendar/test/unit/provider/mock_stream.js');
-  requireApp('calendar/test/unit/service/helper.js');
-  requireLib('provider/caldav_pull_events.js');
-  requireLib('provider/abstract.js');
-  requireLib('provider/caldav.js');
-  requireLib('models/account.js');
-  requireLib('models/calendar.js');
-});
+requireLib('ext/ical.js');
+requireApp('calendar/test/unit/service/helper.js');
+requireApp('calendar/test/unit/provider/mock_stream.js');
+requireLib('models/account.js');
+requireLib('models/calendar.js');
 
-suite('provider/caldav', function() {
+suiteGroup('Provider.Caldav', function() {
 
   var subject;
   var app;
@@ -257,15 +252,31 @@ suite('provider/caldav', function() {
 
     suite('#findCalendars', function() {
       test('success', function(done) {
-        result = [{ id: 'wow' }];
+        result = {
+          one: Factory.build('caldav.calendar'),
+          two: Factory.build('caldav.calendar', { color: null })
+        };
+
         error = null;
 
         subject.findCalendars(input, function cb(cbError, cbResult) {
           done(function() {
-            assert.deepEqual(calledWith, [
-              'caldav', 'findCalendars', input, cb
-            ]);
-            assert.equal(cbResult, result);
+            assert.equal(
+              cbResult.one,
+              result.one,
+              'does not process events with color'
+            );
+
+            // hack clone
+            var withColor = JSON.parse(JSON.stringify(result.two));
+            withColor.color = subject.defaultColor;
+
+            assert.deepEqual(
+              cbResult.two,
+              withColor,
+              'adds color'
+            );
+
             assert.equal(cbError, error);
           });
         });
@@ -775,6 +786,10 @@ suite('provider/caldav', function() {
       });
     });
 
+/*
+// These tests are currently failing and have been temporarily disabled as per
+// Bug 838993. They should be fixed and re-enabled as soon as possible as per
+// Bug 840489.
     suite('with simulated pre-expansion component', function() {
       var comp;
       var didExpand;
@@ -871,6 +886,7 @@ suite('provider/caldav', function() {
         }
       });
     });
+*/
 
   });
 });

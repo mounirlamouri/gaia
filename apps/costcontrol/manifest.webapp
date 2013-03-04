@@ -1,6 +1,6 @@
 {
-  "name": "Cost Control",
-  "description": "Cost Control application to see credit and data usage statistics",
+  "name": "Usage",
+  "description": "Usage application to see credit and data usage statistics",
   "type": "certified",
   "launch_path": "/index.html",
   "developer": {
@@ -34,21 +34,9 @@
     }
   },
   "locales": {
-    "ar": {
-      "name": "Cost Control",
-      "description": "Cost Control application to see credit and data usage statistics"
-    },
     "en-US": {
-      "name": "Cost Control",
-      "description": "Cost Control application to see credit and data usage statistics"
-    },
-    "fr": {
-      "name": "Cost Control",
-      "description": "Cost Control application to see credit and data usage statistics"
-    },
-    "zh-TW": {
-      "name": "Cost Control",
-      "description": "Cost Control application to see credit and data usage statistics"
+      "name": "Usage",
+      "description": "Usage application to see credit and data usage statistics"
     }
   },
   "default_locale": "en-US",
@@ -59,8 +47,9 @@
   "orientation": "portrait-primary",
   "messages": [
      { "sms-received": "/message_handler.html" },
-     { "alarm": "/message_handler.html"},
-     { "sms-sent": "/message_handler.html"},
-     { "telephony-call-ended": "/message_handler.html"}
+     { "alarm": "/message_handler.html" },
+     { "sms-sent": "/message_handler.html" },
+     { "telephony-call-ended": "/message_handler.html" },
+     { "notification": "/index.html" }
    ]
 }

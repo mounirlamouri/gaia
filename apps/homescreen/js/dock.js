@@ -12,26 +12,47 @@ const DockManager = (function() {
   var duration = 300;
 
   var initialOffsetLeft, initialOffsetRight, numApps, cellWidth;
-  var isPanning = false, startX, currentX, deltaX;
-  var thresholdForTapping = 10;
+  var isPanning = false, startEvent, currentX, deltaX, tapThreshold;
+
+  var isTouch = 'ontouchstart' in window;
+  var touchstart = isTouch ? 'touchstart' : 'mousedown';
+  var touchmove = isTouch ? 'touchmove' : 'mousemove';
+  var touchend = isTouch ? 'touchend' : 'mouseup';
+
+  var getX = (function getXWrapper() {
+    return isTouch ? function(e) { return e.touches[0].pageX } :
+                     function(e) { return e.pageX };
+  })();
+
+  function addActive(target) {
+    if ('isIcon' in target.dataset) {
+      target.classList.add('active');
+      removeActive = function _removeActive() {
+        target.classList.remove('active');
+      }
+    } else {
+      removeActive = function() {};
+    }
+  }
+
+  var removeActive = function() {};
 
   function handleEvent(evt) {
     switch (evt.type) {
-      case 'mousedown':
+      case touchstart:
         evt.stopPropagation();
         initialOffsetLeft = dock.getLeft();
         initialOffsetRight = dock.getRight();
         numApps = dock.getNumIcons();
-        startX = evt.clientX;
+        startEvent = isTouch ? evt.touches[0] : evt;
         attachEvents();
+        addActive(evt.target);
         break;
 
-      case 'mousemove':
-        evt.stopPropagation();
-
-        deltaX = evt.clientX - startX;
+      case touchmove:
+        deltaX = getX(evt) - startEvent.pageX;
         if (!isPanning) {
-          if (Math.abs(deltaX) < thresholdForTapping) {
+          if (Math.abs(deltaX) < tapThreshold) {
             return;
           } else {
             isPanning = true;
@@ -67,8 +88,7 @@ const DockManager = (function() {
         dock.moveBy(initialOffsetLeft + deltaX);
         break;
 
-      case 'mouseup':
-        evt.stopPropagation();
+      case touchend:
         releaseEvents();
 
         if (!isPanning) {
@@ -78,14 +98,27 @@ const DockManager = (function() {
           onTouchEnd(deltaX);
         }
 
+        removeActive();
+
         break;
 
       case 'contextmenu':
-        if (GridManager.pageHelper.getCurrentPageNumber() > 1) {
+        if (isPanning) {
+          evt.stopImmediatePropagation();
+          return;
+        }
+
+        if (GridManager.pageHelper.getCurrentPageNumber() >
+            GridManager.landingPage) {
+
           Homescreen.setMode('edit');
+          removeActive();
 
           if ('isIcon' in evt.target.dataset) {
-            DragDropManager.start(evt, {x: evt.clientX, y: evt.clientY});
+            DragDropManager.start(evt, {
+              'x': startEvent.pageX,
+              'y': startEvent.pageY
+            });
           }
         }
         break;
@@ -125,14 +158,14 @@ const DockManager = (function() {
 
   function releaseEvents() {
     container.removeEventListener('contextmenu', handleEvent);
-    window.removeEventListener('mousemove', handleEvent);
-    window.removeEventListener('mouseup', handleEvent);
+    window.removeEventListener(touchmove, handleEvent);
+    window.removeEventListener(touchend, handleEvent);
   }
 
   function attachEvents() {
     container.addEventListener('contextmenu', handleEvent);
-    window.addEventListener('mousemove', handleEvent);
-    window.addEventListener('mouseup', handleEvent);
+    window.addEventListener(touchmove, handleEvent);
+    window.addEventListener(touchend, handleEvent);
   }
 
   function placeAfterRemovingApp(numApps, centering) {
@@ -171,12 +204,13 @@ const DockManager = (function() {
      * @param {Dock} page
      *               The dock page object.
      */
-    init: function dm_init(containerEl, page) {
+    init: function dm_init(containerEl, page, pTapThreshold) {
+      tapThreshold = pTapThreshold;
       container = containerEl;
-      container.addEventListener('mousedown', handleEvent);
+      container.addEventListener(touchstart, handleEvent);
       dock = this.page = page;
 
-      var numIcons= dock.getNumIcons();
+      var numIcons = dock.getNumIcons();
       if (numIcons > maxNumAppInViewPort) {
         container.classList.add('scrollable');
       }
@@ -189,6 +223,7 @@ const DockManager = (function() {
     },
 
     onDragStop: function dm_onDragStop() {
+      container.addEventListener(touchstart, handleEvent);
       var numApps = dock.getNumIcons();
       calculateDimentions(numApps);
 
@@ -205,6 +240,7 @@ const DockManager = (function() {
 
     onDragStart: function dm_onDragStart() {
       releaseEvents();
+      container.removeEventListener(touchstart, handleEvent);
       numAppsBeforeDrag = dock.getNumIcons();
     },
 
